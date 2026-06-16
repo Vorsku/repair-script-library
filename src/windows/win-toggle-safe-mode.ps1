@@ -148,7 +148,7 @@ try {
                 $osPath = "${root}\windows\system32\winload.exe"
                 $isOsPath = Test-Path $osPath
                 if ($isOsPath) {
-                    $osDrive = $drive
+                    $osDrive = $root
                 }
             }
         }
@@ -164,7 +164,7 @@ try {
             $safeModeIndicator = $bcdout | Select-String 'safeboot' | select -First 1
 
             # Check if partition has Registry path (use OS partition that contained winload.exe)
-            $regPath = $osDrive + ':\Windows\System32\config\'
+            $regPath = $osDrive + '\Windows\System32\config\'
             $isRegPath = Test-Path $regPath
         
             # If Registry path found and we're enabling safe mode, check if DC
@@ -173,7 +173,7 @@ try {
                 Log-Output "Load requested Registry hive from $($osDrive)" | Tee-Object -FilePath $logFile -Append
         
                 # Load hive into Rescue VM's registry from attached disk
-                reg load "HKLM\BROKENSYSTEM" "$($osDrive):\Windows\System32\config\SYSTEM"
+                reg load "HKLM\BROKENSYSTEM" "$($osDrive)\Windows\System32\config\SYSTEM"
                 $regLoaded = $true
         
                 # Verify the active Control Set if using the System registry and if not already defined (1 is ControlSet001, 2 is ControlSet002)
@@ -271,8 +271,13 @@ try {
                 $disk | set-disk -IsOffline $true -ErrorAction Stop
 
                 # Start Hyper-V VM
-                Log-Output "#07 - Starting VM" | Tee-Object -FilePath $logFile -Append
-                start-vm $guestHyperVVirtualMachine -ErrorAction SilentlyContinue #Sometimes the repair VM doesn't have enough memory to power it on
+                try {
+                    Start-VM $guestHyperVVirtualMachine -ErrorAction Stop
+                }
+                catch {
+                    Log-Output "WARNING: Could not start nested VM (may need more memory). BCD changes were applied successfully." |
+                        Tee-Object -FilePath $logFile -Append
+                }
             }
 
             Log-Output "END: Please verify status of Safe Mode using MSCONFIG.exe (GUI) or BCDEDIT /enum (shell)" | Tee-Object -FilePath $logFile -Append
@@ -284,8 +289,16 @@ catch {
 
     if ($guestHyperVVirtualMachine) {
         # Bring disk offline again
-        Log-Output "#99 - Bringing disk offline to restart Hyper-V VM" | Tee-Object -FilePath $logFile -Append
+        Log-Output "ERR-01 - Bringing disk offline to restart Hyper-V VM" | Tee-Object -FilePath $logFile -Append
         $disk | set-disk -IsOffline $true -ErrorAction Stop
+        # Start Hyper-V VM
+        try {
+            Start-VM $guestHyperVVirtualMachine -ErrorAction Stop
+        }
+        catch {
+            Log-Output "WARNING: Could not start nested VM (may need more memory). BCD changes were applied successfully." |
+                Tee-Object -FilePath $logFile -Append
+        }
     }
 
     # Log failure scenario
